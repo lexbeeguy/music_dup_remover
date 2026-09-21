@@ -138,6 +138,22 @@ def reset(db: str, yes: bool):
     ui.console.print("[bold green]Database cleared successfully.[/bold green]")
 
 
+@cli.command()
+@click.option("--db", default=DEFAULT_DB_PATH, help="SQLite database path.", show_default=True)
+def gui(db: str):
+    """Launch the CustomTkinter Graphical User Interface (v2.0)."""
+    from music_dup.gui.app import MusicDupApp
+    app = MusicDupApp(db_path=db)
+    app.mainloop()
+
+
+def gui_main():
+    """Direct entry point for music-dup-gui binary script."""
+    from music_dup.gui.app import MusicDupApp
+    app = MusicDupApp()
+    app.mainloop()
+
+
 def main():
     cli()
 

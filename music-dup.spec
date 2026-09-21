@@ -1,12 +1,15 @@
 # -*- mode: python ; coding: utf-8 -*-
+import os
+import customtkinter
 
+ctk_path = os.path.dirname(customtkinter.__file__)
 
 a = Analysis(
-    ['music_dup/cli.py'],
+    ['music_dup/gui/app.py'],
     pathex=[],
     binaries=[('bin/chromaprint-fpcalc-1.5.1-windows-x86_64/fpcalc.exe', '.')],
-    datas=[],
-    hiddenimports=[],
+    datas=[(ctk_path, 'customtkinter')],
+    hiddenimports=['customtkinter', 'pygame', 'PIL'],
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
@@ -22,14 +25,14 @@ exe = EXE(
     a.binaries,
     a.datas,
     [],
-    name='music-dup',
+    name='music-dup-gui',
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,
     upx=True,
     upx_exclude=[],
     runtime_tmpdir=None,
-    console=True,
+    console=False,
     disable_windowed_traceback=False,
     argv_emulation=False,
     target_arch=None,

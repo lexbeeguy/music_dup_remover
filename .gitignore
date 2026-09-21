@@ -65,3 +65,5 @@ env/
 test.wav
 test_music/
 quarantine/
+music_dup_finder/
+

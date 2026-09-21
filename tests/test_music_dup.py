@@ -154,3 +154,40 @@ def test_cross_format_duplicate_detection(tmp_path):
     master = groups[0]["master_file"]
     assert master["filepath"].endswith(".wav")
 
+
+def test_granular_quarantine_and_restore(tmp_path):
+    music_dir = str(tmp_path / "granular_library")
+    db_path = str(tmp_path / "granular.db")
+    quarantine_dir = str(tmp_path / "quarantine")
+
+    track1 = os.path.join(music_dir, "master.wav")
+    track2 = os.path.join(music_dir, "dup1.wav")
+    track3 = os.path.join(music_dir, "dup2.wav")
+
+    create_sine_wave_wav(track1, duration=3.0, freq=440.0)
+    create_sine_wave_wav(track2, duration=3.0, freq=440.0)
+    create_sine_wave_wav(track3, duration=3.0, freq=440.0)
+
+    db = Database(db_path=db_path)
+    scan_directory(music_dir, db)
+    groups = find_and_rank_duplicates(db, similarity_threshold=0.70)
+    
+    assert len(groups) == 1
+    duplicates = groups[0]["duplicates"]
+    assert len(duplicates) == 2
+
+    # Target ONLY the first duplicate file ID
+    target_id = duplicates[0]["id"]
+    q_res = quarantine_duplicates(
+        db, base_scan_dir=music_dir, quarantine_dir=quarantine_dir, dry_run=False, target_file_ids=[target_id]
+    )
+    assert q_res["moved_files"] == 1
+    assert not os.path.exists(duplicates[0]["filepath"])
+    assert os.path.exists(duplicates[1]["filepath"])  # Untargeted duplicate remains
+
+    # Target restore of that specific file ID
+    r_res = restore_quarantined_files(db, dry_run=False, target_file_ids=[target_id])
+    assert r_res["restored_files"] == 1
+    assert os.path.exists(duplicates[0]["filepath"])
+
+

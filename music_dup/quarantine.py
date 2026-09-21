@@ -1,7 +1,7 @@
 import os
 import shutil
 import logging
-from typing import List, Dict, Any, Tuple
+from typing import List, Dict, Any, Tuple, Optional
 from music_dup.db import Database
 
 logger = logging.getLogger(__name__)
@@ -46,10 +46,12 @@ def quarantine_duplicates(
     db: Database,
     base_scan_dir: str,
     quarantine_dir: str = DEFAULT_QUARANTINE_DIR,
-    dry_run: bool = False
+    dry_run: bool = False,
+    target_file_ids: Optional[List[int]] = None
 ) -> Dict[str, Any]:
     """
     Stage lower-quality duplicates into quarantine directory.
+    If target_file_ids is provided, only quarantine specified file IDs.
     """
     groups = db.get_duplicate_groups_summary()
     quarantine_plan: List[Dict[str, Any]] = []
@@ -63,6 +65,9 @@ def quarantine_duplicates(
         for dup in duplicates:
             if dup["is_quarantined"]:
                 continue  # Already quarantined
+
+            if target_file_ids is not None and dup["id"] not in target_file_ids:
+                continue  # Skip files not selected by user
 
             orig_path = dup["filepath"]
             if not os.path.exists(orig_path):
@@ -111,10 +116,12 @@ def quarantine_duplicates(
 
 def restore_quarantined_files(
     db: Database,
-    dry_run: bool = False
+    dry_run: bool = False,
+    target_file_ids: Optional[List[int]] = None
 ) -> Dict[str, Any]:
     """
-    Restore all quarantined files back to their original file locations.
+    Restore quarantined files back to their original file locations.
+    If target_file_ids is provided, only restore specified file IDs.
     """
     history = db.get_quarantine_history()
     restored_count = 0
@@ -125,6 +132,9 @@ def restore_quarantined_files(
         q_path = item["quarantine_path"]
         orig_path = item["original_path"]
 
+        if target_file_ids is not None and file_id not in target_file_ids:
+            continue
+
         plan.append({
             "file_id": file_id,
             "original_path": orig_path,
@@ -132,8 +142,8 @@ def restore_quarantined_files(
             "title": item.get("title") or os.path.basename(orig_path)
         })
 
-    if not dry_run and history:
-        for item in history:
+    if not dry_run and plan:
+        for item in plan:
             file_id = item["file_id"]
             q_path = item["quarantine_path"]
             orig_path = item["original_path"]
