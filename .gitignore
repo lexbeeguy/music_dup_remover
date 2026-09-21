@@ -30,7 +30,8 @@ MANIFEST
 #  Usually these files are written by a python script from a template
 #  Before executing pyinstaller, the template should be edited for your total env
 *.manifest
-*.spec
+# *.spec
+!music-dup.spec
 
 # Installer logs
 pip-log.txt
