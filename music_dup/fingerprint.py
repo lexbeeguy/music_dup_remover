@@ -14,6 +14,8 @@ _FPCALC_VERIFIED_PATH: Optional[str] = None
 _FPCALC_STATUS_CACHE: Optional[Dict[str, Any]] = None
 
 
+SUBPROCESS_FLAGS = getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000) if sys.platform == "win32" else 0
+
 def find_fpcalc() -> Optional[str]:
     """
     Search for fpcalc binary in PyInstaller bundle, PATH, environment variables, virtual environment, and local directories.
@@ -82,7 +84,7 @@ def verify_fpcalc() -> Dict[str, Any]:
 
     try:
         # Run fpcalc -v to check if binary executes without missing DLL errors
-        res = subprocess.run([fpcalc_path, "-v"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5)
+        res = subprocess.run([fpcalc_path, "-v"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, timeout=5, creationflags=SUBPROCESS_FLAGS)
         if res.returncode == 0:
             version_str = res.stdout.strip() or res.stderr.strip()
             acoustid.FPCALC_COMMAND = fpcalc_path
@@ -142,7 +144,7 @@ def compute_fingerprint(filepath: str) -> Tuple[float, str, str]:
     if fpcalc_path:
         try:
             cmd = [fpcalc_path, "-raw", filepath]
-            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True)
+            result = subprocess.run(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True, check=True, creationflags=SUBPROCESS_FLAGS)
             duration, raw_fp = parse_raw_fpcalc_output(result.stdout)
             if raw_fp:
                 return duration, raw_fp, "chromaprint_raw"
