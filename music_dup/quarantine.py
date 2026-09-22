@@ -89,6 +89,7 @@ def quarantine_duplicates(
             total_space_saved += filesize
 
     moved_count = 0
+    errors: List[str] = []
     if not dry_run and quarantine_plan:
         os.makedirs(quarantine_dir, exist_ok=True)
         for item in quarantine_plan:
@@ -103,14 +104,17 @@ def quarantine_duplicates(
                 db.record_quarantine(item["file_id"], orig, target, item["group_id"])
                 moved_count += 1
             except Exception as e:
-                logger.error(f"Failed moving {orig} -> {target}: {e}")
+                err_msg = f"Failed moving {os.path.basename(orig)}: {e}"
+                logger.error(err_msg)
+                errors.append(err_msg)
 
     return {
         "dry_run": dry_run,
         "plan": quarantine_plan,
         "total_files": len(quarantine_plan),
         "moved_files": moved_count if not dry_run else 0,
-        "total_space_saved": total_space_saved
+        "total_space_saved": total_space_saved,
+        "errors": errors
     }
 
 
@@ -125,6 +129,7 @@ def restore_quarantined_files(
     """
     history = db.get_quarantine_history()
     restored_count = 0
+    errors: List[str] = []
     plan = []
 
     for item in history:
@@ -155,11 +160,14 @@ def restore_quarantined_files(
                     db.record_restore(file_id, orig_path)
                     restored_count += 1
                 except Exception as e:
-                    logger.error(f"Failed restoring {q_path} -> {orig_path}: {e}")
+                    err_msg = f"Failed restoring {os.path.basename(q_path)}: {e}"
+                    logger.error(err_msg)
+                    errors.append(err_msg)
 
     return {
         "dry_run": dry_run,
         "plan": plan,
         "total_files": len(plan),
-        "restored_files": restored_count if not dry_run else 0
+        "restored_files": restored_count if not dry_run else 0,
+        "errors": errors
     }

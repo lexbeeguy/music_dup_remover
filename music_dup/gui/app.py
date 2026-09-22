@@ -402,6 +402,9 @@ class MusicDupApp(ctk.CTk):
     # Granular Quarantine Execution
     # -------------------------------------------------------------------------
     def _quarantine_selected_candidates(self):
+        # Stop any active audio preview playback to release file locks on Windows
+        self.player.stop()
+
         selected_ids = [
             file_id for file_id, cb in self.candidate_checkboxes.items()
             if cb.get() == 1 and cb.cget("state") != "disabled"
@@ -430,11 +433,14 @@ class MusicDupApp(ctk.CTk):
             target_file_ids=selected_ids
         )
 
-        messagebox.showinfo(
-            "Quarantine Completed",
+        msg = (
             f"Successfully staged {res['moved_files']} file(s) into quarantine.\n"
             f"Freed {format_bytes(res['total_space_saved'])} of storage in active folders."
         )
+        if res.get("errors"):
+            msg += f"\n\nWarnings/Errors ({len(res['errors'])}):\n" + "\n".join(res["errors"][:5])
+
+        messagebox.showinfo("Quarantine Completed", msg)
 
         self.duplicate_groups = []
         self.refresh_duplicates_view()
@@ -515,6 +521,9 @@ class MusicDupApp(ctk.CTk):
             play_btn.pack(side="right", padx=10, pady=(0, 8))
 
     def _restore_selected_quarantined(self):
+        # Stop any active audio preview playback to release file locks on Windows
+        self.player.stop()
+
         selected_ids = [
             file_id for file_id, cb in self.quarantine_checkboxes.items() if cb.get() == 1
         ]
@@ -532,7 +541,11 @@ class MusicDupApp(ctk.CTk):
 
         res = restore_quarantined_files(self.db, dry_run=False, target_file_ids=selected_ids)
 
-        messagebox.showinfo("Restore Completed", f"Successfully restored {res['restored_files']} file(s).")
+        msg = f"Successfully restored {res['restored_files']} file(s)."
+        if res.get("errors"):
+            msg += f"\n\nWarnings/Errors ({len(res['errors'])}):\n" + "\n".join(res["errors"][:5])
+
+        messagebox.showinfo("Restore Completed", msg)
         self.duplicate_groups = []
         self.refresh_duplicates_view()
         self.refresh_quarantine_view()
