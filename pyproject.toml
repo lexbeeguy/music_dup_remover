@@ -17,6 +17,7 @@ dependencies = [
     "customtkinter>=6.0.0",
     "pillow>=10.0.0",
     "pygame>=2.5.0",
+    "pywin32>=306; sys_platform == 'win32'",
 ]
 
 [project.scripts]
