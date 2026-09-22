@@ -92,8 +92,10 @@ def find_and_rank_duplicates(
     file_ids = [f["id"] for f in files]
     uf = UnionFind(file_ids)
 
-    # 1. Compare file pairs to construct duplicate clusters
+    # 1. Sort files by duration for O(N) duration-window sliding comparison
+    files = sorted(files, key=lambda x: x["duration"])
     n = len(files)
+
     for i in range(n):
         f1 = files[i]
         fp1 = f1["fingerprint"]
@@ -101,14 +103,14 @@ def find_and_rank_duplicates(
         
         for j in range(i + 1, n):
             f2 = files[j]
-            fp2 = f2["fingerprint"]
             dur2 = f2["duration"]
 
-            # Quick duration filter (skip if duration differs by more than tolerance)
-            if dur1 > 0 and dur2 > 0:
-                if abs(dur1 - dur2) > duration_tolerance:
-                    continue
+            # If files are duration-sorted, break early when duration exceeds tolerance
+            if duration_tolerance > 0 and dur1 > 0 and dur2 > 0:
+                if (dur2 - dur1) > duration_tolerance:
+                    break
 
+            fp2 = f2["fingerprint"]
             is_dup = False
 
             # Check 1: Acoustic chromaprint fingerprint similarity
@@ -139,10 +141,10 @@ def find_and_rank_duplicates(
     results = []
     for cluster in duplicate_clusters:
         # Rank files within cluster by quality_score descending
-        # Secondary tie-breaker: filesize descending
+        # Secondary tie-breaker: filesize descending, Tertiary: file ID ascending
         sorted_files = sorted(
             cluster,
-            key=lambda x: (x["quality_score"], x["filesize"]),
+            key=lambda x: (x["quality_score"], x["filesize"], -x["id"]),
             reverse=True
         )
 

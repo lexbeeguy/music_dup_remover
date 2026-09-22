@@ -9,6 +9,14 @@ logger = logging.getLogger(__name__)
 DEFAULT_QUARANTINE_DIR = "quarantine"
 
 
+def normalize_long_path(path: str) -> str:
+    """Add Windows extended path prefix (\\\\?\\) if path length approaches MAX_PATH."""
+    path = os.path.abspath(path)
+    if os.name == 'nt' and len(path) > 240 and not path.startswith('\\\\?\\'):
+        return '\\\\?\\' + path
+    return path
+
+
 def get_quarantine_target_path(
     original_path: str,
     base_scan_dir: str,
@@ -26,16 +34,16 @@ def get_quarantine_target_path(
         if rel_path.startswith(".."):
             # Outside base scan dir: use basename
             rel_path = os.path.basename(original_path)
-    except ValueError:
+    except Exception:
         rel_path = os.path.basename(original_path)
 
     dest_path = os.path.join(quarantine_dir, rel_path)
     
     # Handle collisions if file with same relative path already exists in quarantine
-    if os.path.exists(dest_path):
+    if os.path.exists(normalize_long_path(dest_path)):
         base, ext = os.path.splitext(dest_path)
         counter = 1
-        while os.path.exists(f"{base}_dup{counter}{ext}"):
+        while os.path.exists(normalize_long_path(f"{base}_dup{counter}{ext}")):
             counter += 1
         dest_path = f"{base}_dup{counter}{ext}"
 

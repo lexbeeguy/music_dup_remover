@@ -36,6 +36,8 @@ class MusicDupApp(ctk.CTk):
         # State storage
         self.scan_directory_path: str = ""
         self.is_scanning: bool = False
+        self.current_page: int = 1
+        self.page_size: int = 50
         self.duplicate_groups: List[Dict[str, Any]] = []
         self.candidate_checkboxes: Dict[int, ctk.CTkCheckBox] = {}
         self.quarantine_checkboxes: Dict[int, ctk.CTkCheckBox] = {}
@@ -239,6 +241,36 @@ class MusicDupApp(ctk.CTk):
         self.clusters_scroll = ctk.CTkScrollableFrame(self.tab_scan, label_text="Identified Duplicates")
         self.clusters_scroll.pack(side="top", fill="both", expand=True, padx=10, pady=5)
 
+        # Pagination Control Bar
+        self.page_frame = ctk.CTkFrame(self.tab_scan, corner_radius=0, fg_color="transparent")
+        self.page_frame.pack(side="bottom", fill="x", padx=10, pady=5)
+
+        self.prev_page_btn = ctk.CTkButton(
+            self.page_frame, text="◀ Previous Page", width=120, command=self._on_prev_page
+        )
+        self.prev_page_btn.pack(side="left", padx=5)
+
+        self.page_label = ctk.CTkLabel(
+            self.page_frame, text="Page 1 of 1", font=ctk.CTkFont(size=12, weight="bold")
+        )
+        self.page_label.pack(side="left", padx=20)
+
+        self.next_page_btn = ctk.CTkButton(
+            self.page_frame, text="Next Page ▶", width=120, command=self._on_next_page
+        )
+        self.next_page_btn.pack(side="left", padx=5)
+
+    def _on_prev_page(self):
+        if self.current_page > 1:
+            self.current_page -= 1
+            self.refresh_duplicates_view()
+
+    def _on_next_page(self):
+        max_page = max(1, (len(self.duplicate_groups) + self.page_size - 1) // self.page_size)
+        if self.current_page < max_page:
+            self.current_page += 1
+            self.refresh_duplicates_view()
+
     def _on_sim_slider_change(self, val: float):
         self.sim_val_label.configure(text=f"{val:.2f} ({int(val * 100)}%)")
 
@@ -335,14 +367,30 @@ class MusicDupApp(ctk.CTk):
             )
             no_dup_lbl.pack(padx=20, pady=30)
             self.results_summary_label.configure(text="Acoustic Duplicate Clusters (0 Groups)")
+            self.page_label.configure(text="Page 1 of 1")
+            self.prev_page_btn.configure(state="disabled")
+            self.next_page_btn.configure(state="disabled")
             return
 
         total_savings = sum(g["wasted_size"] for g in self.duplicate_groups)
+        total_groups_count = len(self.duplicate_groups)
+        max_page = max(1, (total_groups_count + self.page_size - 1) // self.page_size)
+        self.current_page = min(self.current_page, max_page)
+
+        start_idx = (self.current_page - 1) * self.page_size
+        end_idx = start_idx + self.page_size
+        page_groups = self.duplicate_groups[start_idx:end_idx]
+
+        self.page_label.configure(text=f"Page {self.current_page} of {max_page} ({total_groups_count} Groups Total)")
+        self.prev_page_btn.configure(state="normal" if self.current_page > 1 else "disabled")
+        self.next_page_btn.configure(state="normal" if self.current_page < max_page else "disabled")
+
         self.results_summary_label.configure(
-            text=f"Acoustic Duplicate Clusters ({len(self.duplicate_groups)} Groups | Reclaimable: {format_bytes(total_savings)})"
+            text=f"Acoustic Duplicate Clusters ({total_groups_count} Groups | Reclaimable: {format_bytes(total_savings)})"
         )
 
-        for idx, group in enumerate(self.duplicate_groups, 1):
+        for relative_idx, group in enumerate(page_groups, 1):
+            idx = start_idx + relative_idx
             master = group["master_file"]
             all_files = group["all_files"]
             wasted = format_bytes(group["wasted_size"])

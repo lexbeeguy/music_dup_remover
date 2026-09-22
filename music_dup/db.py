@@ -73,6 +73,7 @@ class Database:
 
             # Indexes
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_path ON files(filepath);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_duration ON files(duration);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_fingerprint ON files(fingerprint);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_lookup ON files(filepath, filesize, mtime);")
             cursor.execute("CREATE INDEX IF NOT EXISTS idx_groups_group ON duplicate_groups(group_id);")
@@ -137,6 +138,59 @@ class Database:
             
             cursor.execute("SELECT id FROM files WHERE filepath = ?", (meta.filepath,))
             return cursor.fetchone()["id"]
+
+    def upsert_files_batch(self, items: List[Tuple[AudioMetadata, str, str]]):
+        """
+        Batch insert or update multiple file records in a single atomic transaction.
+        items is a list of tuples: (AudioMetadata, fingerprint_str, fp_method_str)
+        """
+        if not items:
+            return
+
+        now = time.time()
+        rows = []
+        for meta, fingerprint, fp_method in items:
+            try:
+                mtime = os.path.getmtime(meta.filepath)
+            except Exception:
+                mtime = now
+
+            rows.append((
+                meta.filepath, meta.filesize, mtime, meta.format_ext, meta.duration,
+                meta.bitrate, meta.sample_rate, meta.channels, meta.bits_per_sample,
+                1 if meta.is_lossless else 0, meta.title, meta.artist, meta.album,
+                fingerprint, fp_method, meta.quality_score, meta.quality_badge, now
+            ))
+
+        with self.get_connection() as conn:
+            cursor = conn.cursor()
+            cursor.executemany("""
+                INSERT INTO files (
+                    filepath, filesize, mtime, format_ext, duration, bitrate,
+                    sample_rate, channels, bits_per_sample, is_lossless,
+                    title, artist, album, fingerprint, fp_method,
+                    quality_score, quality_badge, scanned_at
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ON CONFLICT(filepath) DO UPDATE SET
+                    filesize=excluded.filesize,
+                    mtime=excluded.mtime,
+                    format_ext=excluded.format_ext,
+                    duration=excluded.duration,
+                    bitrate=excluded.bitrate,
+                    sample_rate=excluded.sample_rate,
+                    channels=excluded.channels,
+                    bits_per_sample=excluded.bits_per_sample,
+                    is_lossless=excluded.is_lossless,
+                    title=excluded.title,
+                    artist=excluded.artist,
+                    album=excluded.album,
+                    fingerprint=excluded.fingerprint,
+                    fp_method=excluded.fp_method,
+                    quality_score=excluded.quality_score,
+                    quality_badge=excluded.quality_badge,
+                    scanned_at=excluded.scanned_at
+            """, rows)
+            conn.commit()
 
     def clear_duplicate_groups(self):
         """Reset all computed duplicate groups."""
