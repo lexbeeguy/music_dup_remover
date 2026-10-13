@@ -4,9 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "music-dup"
-version = "0.1.0"
-description = "Acoustic duplicate song scanner, quality ranker, and quarantine CLI tool"
+version = "2.1.0"
+description = "Find duplicate songs by how they sound, keep the best-quality copy, and move the rest to a reversible quarantine."
 readme = "README.md"
+license = {file = "LICENSE"}
 requires-python = ">=3.9"
 dependencies = [
     "pyacoustid>=1.3.0",
@@ -20,6 +21,12 @@ dependencies = [
     "pywin32>=306; sys_platform == 'win32'",
 ]
 
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0",
+    "pytest-cov>=4.0",
+]
+
 [project.scripts]
 music-dup = "music_dup.cli:main"
 music-dup-gui = "music_dup.cli:gui_main"
@@ -27,3 +34,6 @@ sounddup = "music_dup.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

@@ -1,7 +1,8 @@
 import sqlite3
 import os
 import time
-from typing import Optional, List, Dict, Any, Tuple
+from contextlib import contextmanager
+from typing import Optional, List, Dict, Any, Tuple, Iterator
 from music_dup.metadata import AudioMetadata
 
 DEFAULT_DB_PATH = "music_dup.db"
@@ -13,12 +14,30 @@ class Database:
         self._init_db()
 
     def get_connection(self) -> sqlite3.Connection:
-        conn = sqlite3.connect(self.db_path)
+        """Open a raw connection. Callers are responsible for closing it."""
+        conn = sqlite3.connect(self.db_path, timeout=30)
         conn.row_factory = sqlite3.Row
         return conn
 
+    @contextmanager
+    def _connect(self) -> Iterator[sqlite3.Connection]:
+        """
+        Connection that commits on success, rolls back on error, and is always
+        closed. (sqlite3's own `with conn:` only commits; it never closes, which
+        leaks handles and keeps the DB file locked on Windows.)
+        """
+        conn = self.get_connection()
+        try:
+            yield conn
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            raise
+        finally:
+            conn.close()
+
     def _init_db(self):
-        with self.get_connection() as conn:
+        with self._connect() as conn:
             cursor = conn.cursor()
             
             # Files metadata table
@@ -83,7 +102,7 @@ class Database:
         """
         Check if file metadata and fingerprint are already cached in DB and unchanged.
         """
-        with self.get_connection() as conn:
+        with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT * FROM files WHERE filepath = ? AND filesize = ? AND ABS(mtime - ?) < 0.001
@@ -100,7 +119,7 @@ class Database:
         mtime = os.path.getmtime(meta.filepath)
         now = time.time()
 
-        with self.get_connection() as conn:
+        with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO files (
@@ -140,7 +159,7 @@ class Database:
 
     def clear_duplicate_groups(self):
         """Reset all computed duplicate groups."""
-        with self.get_connection() as conn:
+        with self._connect() as conn:
             conn.execute("DELETE FROM duplicate_groups")
             conn.commit()
 
@@ -149,7 +168,7 @@ class Database:
         Save a duplicate group with file IDs and their ranks (rank 1 = best quality).
         file_rankings is a list of tuples: (file_id, rank)
         """
-        with self.get_connection() as conn:
+        with self._connect() as conn:
             cursor = conn.cursor()
             for file_id, rank in file_rankings:
                 cursor.execute("""
@@ -160,16 +179,48 @@ class Database:
 
     def get_all_scanned_files(self) -> List[Dict[str, Any]]:
         """Return all scanned file records from DB."""
-        with self.get_connection() as conn:
+        with self._connect() as conn:
             cursor = conn.cursor()
-            cursor.execute("SELECT * FROM files WHERE fingerprint IS NOT NULL AND fingerprint != ''")
+            cursor.execute("""
+                SELECT * FROM files
+                WHERE fingerprint IS NOT NULL AND fingerprint != ''
+                  AND id NOT IN (SELECT file_id FROM quarantine_history)
+            """)
             return [dict(r) for r in cursor.fetchall()]
+
+    def prune_missing_files(self, directory: str) -> int:
+        """
+        Remove cached records for files under `directory` that no longer exist
+        on disk, so deleted tracks stop showing up as duplicates. Files that
+        are currently quarantined are never pruned. Returns the number removed.
+        """
+        directory = os.path.normcase(os.path.abspath(directory))
+        prefix = directory.rstrip(os.sep) + os.sep
+        with self._connect() as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                SELECT id, filepath FROM files
+                WHERE id NOT IN (SELECT file_id FROM quarantine_history)
+            """)
+            stale_ids = []
+            for row in cursor.fetchall():
+                path = row["filepath"]
+                if not os.path.normcase(os.path.abspath(path)).startswith(prefix):
+                    continue  # belongs to a different library folder
+                if not os.path.exists(path):
+                    stale_ids.append(row["id"])
+            for i in range(0, len(stale_ids), 500):
+                chunk = stale_ids[i:i + 500]
+                marks = ",".join("?" * len(chunk))
+                cursor.execute(f"DELETE FROM duplicate_groups WHERE file_id IN ({marks})", chunk)
+                cursor.execute(f"DELETE FROM files WHERE id IN ({marks})", chunk)
+            return len(stale_ids)
 
     def get_duplicate_groups_summary(self) -> List[Dict[str, Any]]:
         """
         Return structured duplicate groups with member file details ranked by quality.
         """
-        with self.get_connection() as conn:
+        with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT g.group_id, g.rank, g.is_quarantined, f.*
@@ -206,7 +257,7 @@ class Database:
     def record_quarantine(self, file_id: int, original_path: str, quarantine_path: str, group_id: str):
         """Record quarantine event in DB."""
         now = time.time()
-        with self.get_connection() as conn:
+        with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 INSERT INTO quarantine_history (file_id, original_path, quarantine_path, group_id, quarantined_at)
@@ -226,7 +277,7 @@ class Database:
 
     def record_restore(self, file_id: int, original_path: str):
         """Record restore event in DB."""
-        with self.get_connection() as conn:
+        with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute("DELETE FROM quarantine_history WHERE file_id = ?", (file_id,))
             cursor.execute("UPDATE duplicate_groups SET is_quarantined = 0 WHERE file_id = ?", (file_id,))
@@ -235,7 +286,7 @@ class Database:
 
     def get_quarantine_history(self) -> List[Dict[str, Any]]:
         """Return active quarantine records."""
-        with self.get_connection() as conn:
+        with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute("""
                 SELECT q.*, f.title, f.artist, f.format_ext, f.quality_badge, f.filesize
@@ -247,7 +298,7 @@ class Database:
 
     def get_stats(self) -> Dict[str, Any]:
         """Get database statistical overview."""
-        with self.get_connection() as conn:
+        with self._connect() as conn:
             cursor = conn.cursor()
             cursor.execute("SELECT COUNT(*), SUM(filesize) FROM files")
             total_files, total_size = cursor.fetchone()
@@ -272,7 +323,7 @@ class Database:
 
     def reset_db(self):
         """Clear all tables in database."""
-        with self.get_connection() as conn:
+        with self._connect() as conn:
             conn.execute("DELETE FROM quarantine_history")
             conn.execute("DELETE FROM duplicate_groups")
             conn.execute("DELETE FROM files")

@@ -5,7 +5,9 @@ from rich.console import Console
 from rich.table import Table
 from rich.panel import Panel
 from rich.tree import Tree
+from rich.markup import escape
 
+from music_dup import __version__
 from music_dup.fingerprint import verify_fpcalc
 
 # Ensure stdout handles UTF-8 on Windows legacy consoles
@@ -31,13 +33,14 @@ def print_header(title: str = "Music Duplicate Management Tool"):
     """Render application header banner."""
     fp_status = verify_fpcalc()
     if fp_status["available"]:
-        engine_msg = "[dim green]✓ Acoustic Engine: Chromaprint (fpcalc v1.5.1)[/dim green]"
+        version = fp_status.get("version") or "fpcalc"
+        engine_msg = f"[dim green]✓ Acoustic Engine: Chromaprint ({version})[/dim green]"
     else:
         engine_msg = f"[bold yellow]⚠️ Acoustic Engine Notice: {fp_status['error']}[/bold yellow]\n[cyan]Metadata & Duration cross-format matching active.[/cyan]"
 
     console.print(
         Panel.fit(
-            f"[bold magenta]{title}[/bold magenta] [dim]v0.1.0[/dim]\n"
+            f"[bold magenta]{title}[/bold magenta] [dim]v{__version__}[/dim]\n"
             f"[cyan]Acoustic Fingerprinting & Quality-Based Duplicate Quarantine[/cyan]\n"
             f"{engine_msg}",
             border_style="bright_blue",
@@ -55,6 +58,8 @@ def print_scan_progress_summary(stats: Dict[str, Any]):
     table.add_row("Total Files Scanned", str(stats["total_files"]))
     table.add_row("Rescanned from DB Cache", f"[green]{stats['cached_count']}[/green]")
     table.add_row("Newly Fingerprinted Files", f"[yellow]{stats['new_scanned_count']}[/yellow]")
+    if stats.get("removed_count"):
+        table.add_row("Removed (no longer on disk)", f"[dim]{stats['removed_count']}[/dim]")
     if stats["failed_count"] > 0:
         table.add_row("Failed / Corrupt Files", f"[bold red]{stats['failed_count']}[/bold red]")
 
@@ -75,8 +80,8 @@ def print_duplicate_groups(groups: List[Dict[str, Any]]):
         all_files = group["all_files"]
         wasted = format_bytes(group["wasted_size"])
         
-        track_name = master.get("title") or os.path.basename(master["filepath"])
-        artist_name = f" by {master['artist']}" if master.get("artist") else ""
+        track_name = escape(master.get("title") or os.path.basename(master["filepath"]))
+        artist_name = f" by {escape(master['artist'])}" if master.get("artist") else ""
 
         root = Tree(
             f"[bold white]Group #{idx} ({gid}):[/bold white] [bold cyan]{track_name}{artist_name}[/bold cyan] "
@@ -85,8 +90,8 @@ def print_duplicate_groups(groups: List[Dict[str, Any]]):
 
         for file in all_files:
             rank = file["rank"]
-            filepath = file["filepath"]
-            badge = file["quality_badge"]
+            filepath = escape(file["filepath"])
+            badge = escape(file["quality_badge"])
             size_str = format_bytes(file["filesize"])
             dur_str = f"{file['duration']:.1f}s" if file['duration'] > 0 else "N/A"
             is_q = file.get("is_quarantined", 0)
@@ -131,19 +136,30 @@ def print_quarantine_summary(result: Dict[str, Any]):
     for item in plan:
         table.add_row(
             str(item["file_id"]),
-            item["title"][:30],
-            item["badge"],
-            item["master_badge"],
-            item["original_path"]
+            escape(item["title"][:30]),
+            escape(item["badge"]),
+            escape(item["master_badge"]),
+            escape(item["original_path"])
         )
 
     console.print(table)
     
-    saved = format_bytes(result["total_space_saved"])
     if dry_run:
+        saved = format_bytes(result["total_space_saved"])
         console.print(f"\n[bold yellow]Summary:[/bold yellow] {len(plan)} files queued for quarantine. Running without `--dry-run` will save [bold green]{saved}[/bold green] of disk space.")
     else:
+        saved = format_bytes(result.get("moved_size", result["total_space_saved"]))
         console.print(f"\n[bold green]Success:[/bold green] {result['moved_files']} files staged to quarantine. Freed [bold green]{saved}[/bold green] in original directories.")
+    print_errors(result.get("errors", []))
+
+
+def print_errors(errors: List[str]):
+    """Render any per-file errors from a quarantine/restore run."""
+    if not errors:
+        return
+    console.print(f"\n[bold red]{len(errors)} file(s) could not be moved:[/bold red]")
+    for err in errors:
+        console.print(f"  [red]✗[/red] {escape(err)}")
 
 
 def print_stats(stats: Dict[str, Any]):
@@ -152,7 +168,7 @@ def print_stats(stats: Dict[str, Any]):
     table.add_column("Property", style="bold cyan")
     table.add_column("Value", style="bold white")
 
-    table.add_row("Database Location", stats["db_path"])
+    table.add_row("Database Location", escape(stats["db_path"]))
     table.add_row("Total Tracks Scanned", str(stats["total_files"]))
     table.add_row("Total Library Size", format_bytes(stats["total_size"]))
     table.add_row("Duplicate Clusters Found", str(stats["duplicate_groups"]))

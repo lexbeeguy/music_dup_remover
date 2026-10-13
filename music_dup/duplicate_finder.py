@@ -24,18 +24,32 @@ class UnionFind:
             self.parent[root_i] = root_j
 
 
-def normalize_string(s: str) -> str:
-    """Normalize string for fuzzy title/artist comparison."""
+DEFAULT_SIMILARITY_THRESHOLD = 0.85
+DEFAULT_DURATION_TOLERANCE = 3.5
+
+
+def normalize_string(s: str, strip_track_number: bool = False) -> str:
+    """
+    Normalize a title/artist string for fuzzy comparison: lowercase, drop
+    punctuation and collapse whitespace. With strip_track_number, a leading
+    track number such as "01 - " or "01. " is removed (used for filenames,
+    not for tags, so titles like "99 Problems" stay intact).
+    """
     if not s:
         return ""
-    # If path, extract filename without extension first
-    if "/" in s or "\\" in s or "." in s:
-        s = os.path.splitext(os.path.basename(s))[0]
-    # Lowercase, remove track numbers (e.g., 01 -, 01.), punctuation, extra whitespace
-    s = s.lower()
-    s = re.sub(r"^\d+[\s\.\-_]+", "", s)
+    s = s.lower().strip()
+    if strip_track_number:
+        s = re.sub(r"^\d+[\s\.\-_]+", "", s)
     s = re.sub(r"[^\w\s]", "", s)
     return " ".join(s.split())
+
+
+def normalize_filename(path: str) -> str:
+    """Normalize a file path to a comparable title (basename without extension)."""
+    if not path:
+        return ""
+    name = os.path.splitext(os.path.basename(path.replace("\\", "/")))[0]
+    return normalize_string(name.replace("_", " "), strip_track_number=True)
 
 
 def is_metadata_duplicate(f1: Dict[str, Any], f2: Dict[str, Any], duration_tolerance: float) -> bool:
@@ -55,9 +69,9 @@ def is_metadata_duplicate(f1: Dict[str, Any], f2: Dict[str, Any], duration_toler
 
     # If title tag is missing, fallback to cleaned filename
     if not title1:
-        title1 = normalize_string(f1["filepath"])
+        title1 = normalize_filename(f1["filepath"])
     if not title2:
-        title2 = normalize_string(f2["filepath"])
+        title2 = normalize_filename(f2["filepath"])
 
     if not title1 or not title2:
         return False
@@ -77,8 +91,8 @@ def is_metadata_duplicate(f1: Dict[str, Any], f2: Dict[str, Any], duration_toler
 
 def find_and_rank_duplicates(
     db: Database,
-    similarity_threshold: float = 0.70,
-    duration_tolerance: float = 3.5
+    similarity_threshold: float = DEFAULT_SIMILARITY_THRESHOLD,
+    duration_tolerance: float = DEFAULT_DURATION_TOLERANCE
 ) -> List[Dict[str, Any]]:
     """
     Scans DB file records, identifies cross-format acoustic duplicate groups using

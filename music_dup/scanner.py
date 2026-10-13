@@ -79,10 +79,16 @@ def scan_directory(
         except Exception as e:
             logger.error(f"Error scanning {filepath}: {e}")
             failed_count += 1
+            if progress_callback:
+                progress_callback(idx, total, os.path.basename(filepath), False)
+
+    # Drop cache entries for files that were deleted or moved since the last scan
+    removed_count = db.prune_missing_files(directory)
 
     return {
         "total_files": total,
         "cached_count": cached_count,
         "new_scanned_count": new_scanned_count,
         "failed_count": failed_count,
+        "removed_count": removed_count,
     }

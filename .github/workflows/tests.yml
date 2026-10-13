@@ -1,0 +1,46 @@
+name: tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: ${{ matrix.os }} / Python ${{ matrix.python-version }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest]
+        python-version: ["3.9", "3.10", "3.11", "3.12", "3.13"]
+        include:
+          # Windows uses the bundled fpcalc.exe from bin/
+          - os: windows-latest
+            python-version: "3.12"
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+          cache: pip
+
+      - name: Install fpcalc (Chromaprint)
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y libchromaprint-tools
+
+      - name: Install package
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -e ".[dev]"
+
+      - name: Check fpcalc is detected
+        run: python -c "from music_dup.fingerprint import verify_fpcalc; s = verify_fpcalc(); print(s); assert s['available']"
+
+      - name: Byte-compile all modules (including the GUI)
+        run: python -m compileall -q music_dup
+
+      - name: Run tests
+        run: python -m pytest -v --cov=music_dup --cov-report=term-missing

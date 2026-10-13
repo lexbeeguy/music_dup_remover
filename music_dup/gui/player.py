@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 
 class AudioPlayer:
-    """Audio preview player supporting MP3, WAV, FLAC, OGG, and M4A/AAC via Windows Media Player COM integration."""
+    """Audio preview player: pygame for MP3/WAV/FLAC/OGG, plus Windows Media Player (COM) for M4A/AAC/WMA on Windows."""
 
     def __init__(self, status_callback: Optional[Callable[[str, bool], None]] = None):
         self.current_filepath: Optional[str] = None
@@ -123,12 +123,16 @@ class AudioPlayer:
         if self.wmplayer:
             try:
                 self.wmplayer.controls.stop()
+                self.wmplayer.close()  # release the media file handle
             except Exception:
                 pass
 
         if pygame.mixer.get_init():
             try:
                 pygame.mixer.music.stop()
+                # stop() keeps the file open; unload() releases the handle so the
+                # file can be moved to quarantine (Windows refuses to move open files).
+                pygame.mixer.music.unload()
             except Exception:
                 pass
 

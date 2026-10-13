@@ -1,35 +1,13 @@
+"""End-to-end tests carried over from the original project."""
 import os
-import wave
-import struct
-import math
-import tempfile
-import pytest
+
+from helpers import create_sine_wave_wav
 from music_dup.metadata import extract_audio_metadata, AudioMetadata
 from music_dup.fingerprint import compute_fingerprint, calculate_fingerprint_similarity
 from music_dup.db import Database
 from music_dup.scanner import scan_directory
 from music_dup.duplicate_finder import find_and_rank_duplicates
 from music_dup.quarantine import quarantine_duplicates, restore_quarantined_files
-
-
-def create_sine_wave_wav(filepath: str, duration: float = 3.0, sample_rate: int = 44100, freq: float = 440.0, num_channels: int = 2):
-    """Generate a clean synthetic WAV audio file for testing."""
-    os.makedirs(os.path.dirname(filepath), exist_ok=True)
-    num_samples = int(duration * sample_rate)
-    
-    with wave.open(filepath, 'w') as wav_file:
-        wav_file.setnchannels(num_channels)
-        wav_file.setsampwidth(2)  # 16-bit
-        wav_file.setframerate(sample_rate)
-        
-        amplitude = 16000
-        for i in range(num_samples):
-            t = i / sample_rate
-            value = int(amplitude * math.sin(2 * math.pi * freq * t))
-            data = struct.pack('<h', value)
-            if num_channels == 2:
-                data += data
-            wav_file.writeframesraw(data)
 
 
 def test_metadata_extraction(tmp_path):

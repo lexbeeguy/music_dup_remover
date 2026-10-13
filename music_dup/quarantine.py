@@ -1,7 +1,7 @@
 import os
 import shutil
 import logging
-from typing import List, Dict, Any, Tuple, Optional
+from typing import List, Dict, Any, Optional, Set
 from music_dup.db import Database
 
 logger = logging.getLogger(__name__)
@@ -12,11 +12,16 @@ DEFAULT_QUARANTINE_DIR = "quarantine"
 def get_quarantine_target_path(
     original_path: str,
     base_scan_dir: str,
-    quarantine_dir: str
+    quarantine_dir: str,
+    reserved: Optional[Set[str]] = None,
 ) -> str:
     """
     Compute destination quarantine filepath while preserving relative subfolder hierarchy.
+
+    `reserved` holds destinations already claimed by earlier files in the same
+    batch, so two files that map to the same name don't overwrite each other.
     """
+    reserved = reserved if reserved is not None else set()
     quarantine_dir = os.path.abspath(quarantine_dir)
     original_path = os.path.abspath(original_path)
     base_scan_dir = os.path.abspath(base_scan_dir)
@@ -31,14 +36,18 @@ def get_quarantine_target_path(
 
     dest_path = os.path.join(quarantine_dir, rel_path)
     
-    # Handle collisions if file with same relative path already exists in quarantine
-    if os.path.exists(dest_path):
+    def taken(p: str) -> bool:
+        return os.path.exists(p) or os.path.normcase(p) in reserved
+
+    # Handle collisions with files already in quarantine or claimed earlier in this batch
+    if taken(dest_path):
         base, ext = os.path.splitext(dest_path)
         counter = 1
-        while os.path.exists(f"{base}_dup{counter}{ext}"):
+        while taken(f"{base}_dup{counter}{ext}"):
             counter += 1
         dest_path = f"{base}_dup{counter}{ext}"
 
+    reserved.add(os.path.normcase(dest_path))
     return dest_path
 
 
@@ -56,11 +65,17 @@ def quarantine_duplicates(
     groups = db.get_duplicate_groups_summary()
     quarantine_plan: List[Dict[str, Any]] = []
     total_space_saved = 0
+    reserved_targets: Set[str] = set()
 
     for group in groups:
         gid = group["group_id"]
         master = group["master_file"]
         duplicates = group["all_files"][1:]  # Rank 2 and below
+
+        # Safety: never quarantine the remaining copies if the file we'd keep is gone
+        if not os.path.exists(master["filepath"]):
+            logger.warning(f"Skipping group {gid}: master file missing ({master['filepath']})")
+            continue
 
         for dup in duplicates:
             if dup["is_quarantined"]:
@@ -73,7 +88,7 @@ def quarantine_duplicates(
             if not os.path.exists(orig_path):
                 continue
 
-            target_path = get_quarantine_target_path(orig_path, base_scan_dir, quarantine_dir)
+            target_path = get_quarantine_target_path(orig_path, base_scan_dir, quarantine_dir, reserved_targets)
             filesize = dup["filesize"]
 
             quarantine_plan.append({
@@ -89,6 +104,7 @@ def quarantine_duplicates(
             total_space_saved += filesize
 
     moved_count = 0
+    moved_size = 0
     errors: List[str] = []
     if not dry_run and quarantine_plan:
         os.makedirs(quarantine_dir, exist_ok=True)
@@ -96,13 +112,19 @@ def quarantine_duplicates(
             orig = item["original_path"]
             target = item["quarantine_path"]
             
-            # Ensure destination directory exists
-            os.makedirs(os.path.dirname(target), exist_ok=True)
-
             try:
+                os.makedirs(os.path.dirname(target), exist_ok=True)
+                if os.path.exists(target):
+                    raise FileExistsError(f"destination already exists: {target}")
                 shutil.move(orig, target)
-                db.record_quarantine(item["file_id"], orig, target, item["group_id"])
+                try:
+                    db.record_quarantine(item["file_id"], orig, target, item["group_id"])
+                except Exception:
+                    # Don't leave an untracked file in quarantine: put it back.
+                    shutil.move(target, orig)
+                    raise
                 moved_count += 1
+                moved_size += item["filesize"]
             except Exception as e:
                 err_msg = f"Failed moving {os.path.basename(orig)}: {e}"
                 logger.error(err_msg)
@@ -113,6 +135,7 @@ def quarantine_duplicates(
         "plan": quarantine_plan,
         "total_files": len(quarantine_plan),
         "moved_files": moved_count if not dry_run else 0,
+        "moved_size": moved_size,
         "total_space_saved": total_space_saved,
         "errors": errors
     }
@@ -153,16 +176,27 @@ def restore_quarantined_files(
             q_path = item["quarantine_path"]
             orig_path = item["original_path"]
 
-            if os.path.exists(q_path):
+            name = os.path.basename(q_path)
+            if not os.path.exists(q_path):
+                errors.append(f"Failed restoring {name}: quarantined file is missing ({q_path})")
+                continue
+            if os.path.exists(orig_path):
+                # Never overwrite: on macOS/Linux shutil.move would silently replace it.
+                errors.append(f"Failed restoring {name}: a file already exists at {orig_path}")
+                continue
+            try:
                 os.makedirs(os.path.dirname(orig_path), exist_ok=True)
+                shutil.move(q_path, orig_path)
                 try:
-                    shutil.move(q_path, orig_path)
                     db.record_restore(file_id, orig_path)
-                    restored_count += 1
-                except Exception as e:
-                    err_msg = f"Failed restoring {os.path.basename(q_path)}: {e}"
-                    logger.error(err_msg)
-                    errors.append(err_msg)
+                except Exception:
+                    shutil.move(orig_path, q_path)  # keep DB and disk consistent
+                    raise
+                restored_count += 1
+            except Exception as e:
+                err_msg = f"Failed restoring {name}: {e}"
+                logger.error(err_msg)
+                errors.append(err_msg)
 
     return {
         "dry_run": dry_run,

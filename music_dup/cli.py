@@ -6,10 +6,13 @@ from music_dup.db import Database, DEFAULT_DB_PATH
 from music_dup.scanner import scan_directory
 from music_dup.duplicate_finder import find_and_rank_duplicates
 from music_dup.quarantine import quarantine_duplicates, restore_quarantined_files
-from music_dup import ui
+from music_dup import ui, __version__
+from music_dup.duplicate_finder import DEFAULT_SIMILARITY_THRESHOLD, DEFAULT_DURATION_TOLERANCE
+from rich.markup import escape
 
 
 @click.group()
+@click.version_option(__version__, prog_name="music-dup")
 def cli():
     """Music Duplicate Management Tool (music-dup)"""
     pass
@@ -18,14 +21,14 @@ def cli():
 @cli.command()
 @click.argument("directory", type=click.Path(exists=True, file_okay=False, dir_okay=True))
 @click.option("--db", default=DEFAULT_DB_PATH, help="SQLite database path for caching.", show_default=True)
-@click.option("--similarity", default=0.85, type=float, help="Acoustic fingerprint similarity threshold (0.0 - 1.0).", show_default=True)
-@click.option("--tolerance", default=3.5, type=float, help="Duration match tolerance in seconds.", show_default=True)
+@click.option("--similarity", default=DEFAULT_SIMILARITY_THRESHOLD, type=click.FloatRange(0.0, 1.0), help="Acoustic fingerprint similarity threshold (0.0 - 1.0).", show_default=True)
+@click.option("--tolerance", default=DEFAULT_DURATION_TOLERANCE, type=click.FloatRange(min=0.0), help="Duration match tolerance in seconds.", show_default=True)
 def scan(directory: str, db: str, similarity: float, tolerance: float):
     """Scan music directory, extract metadata, generate acoustic fingerprints, and rank duplicates."""
     ui.print_header()
     database = Database(db_path=db)
 
-    ui.console.print(f"[bold cyan]Scanning directory:[/bold cyan] [white]{directory}[/white]")
+    ui.console.print(f"[bold cyan]Scanning directory:[/bold cyan] [white]{escape(directory)}[/white]")
 
     with Progress(
         SpinnerColumn(),
@@ -42,7 +45,7 @@ def scan(directory: str, db: str, similarity: float, tolerance: float):
                 task,
                 total=total,
                 completed=current,
-                description=f"[cyan]Processing {status_text}: {filename[:30]}"
+                description=f"[cyan]Processing {status_text}: {escape(filename[:30])}"
             )
 
         scan_stats = scan_directory(directory, database, progress_callback=progress_cb)
@@ -57,8 +60,8 @@ def scan(directory: str, db: str, similarity: float, tolerance: float):
 
 @cli.command()
 @click.option("--db", default=DEFAULT_DB_PATH, help="SQLite database path.", show_default=True)
-@click.option("--similarity", default=0.85, type=float, help="Acoustic fingerprint similarity threshold.", show_default=True)
-@click.option("--tolerance", default=3.5, type=float, help="Duration match tolerance in seconds.", show_default=True)
+@click.option("--similarity", default=DEFAULT_SIMILARITY_THRESHOLD, type=click.FloatRange(0.0, 1.0), help="Acoustic fingerprint similarity threshold.", show_default=True)
+@click.option("--tolerance", default=DEFAULT_DURATION_TOLERANCE, type=click.FloatRange(min=0.0), help="Duration match tolerance in seconds.", show_default=True)
 def duplicates(db: str, similarity: float, tolerance: float):
     """Display identified acoustic duplicate clusters and quality rankings."""
     ui.print_header()
@@ -105,10 +108,11 @@ def restore(db: str, dry_run: bool):
     mode = "[bold yellow](DRY RUN)[/bold yellow]" if dry_run else "[bold green](COMPLETED)[/bold green]"
     ui.console.print(f"\nRestoring {len(result['plan'])} files {mode}:")
     for item in result["plan"]:
-        ui.console.print(f" ➔ Restoring: [yellow]{item['quarantine_path']}[/yellow] -> [green]{item['original_path']}[/green]")
+        ui.console.print(f" ➔ Restoring: [yellow]{escape(item['quarantine_path'])}[/yellow] -> [green]{escape(item['original_path'])}[/green]")
 
     if not dry_run:
         ui.console.print(f"\n[bold green]Restored {result['restored_files']} files successfully.[/bold green]")
+        ui.print_errors(result.get("errors", []))
 
 
 @cli.command()
@@ -141,14 +145,14 @@ def reset(db: str, yes: bool):
 @cli.command()
 @click.option("--db", default=DEFAULT_DB_PATH, help="SQLite database path.", show_default=True)
 def gui(db: str):
-    """Launch the CustomTkinter Graphical User Interface (v2.0)."""
+    """Launch the desktop app."""
     from music_dup.gui.app import MusicDupApp
     app = MusicDupApp(db_path=db)
     app.mainloop()
 
 
 def gui_main():
-    """Direct entry point for music-dup-gui binary script."""
+    """Direct entry point for the music-dup-gui script."""
     from music_dup.gui.app import MusicDupApp
     app = MusicDupApp()
     app.mainloop()

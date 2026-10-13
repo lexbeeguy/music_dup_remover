@@ -7,6 +7,7 @@ from typing import List, Dict, Any, Optional
 
 import customtkinter as ctk
 
+from music_dup import __version__
 from music_dup.db import Database, DEFAULT_DB_PATH
 from music_dup.scanner import scan_directory
 from music_dup.duplicate_finder import find_and_rank_duplicates
@@ -24,8 +25,8 @@ class MusicDupApp(ctk.CTk):
     def __init__(self, db_path: str = DEFAULT_DB_PATH):
         super().__init__()
 
-        self.title("Music Duplicate Management Tool (v2.0)")
-        self.geometry("1100 x 780")
+        self.title(f"Music Duplicate Management Tool (v{__version__})")
+        self.geometry("1100x780")
         self.minsize(900, 600)
 
         self.db = Database(db_path=db_path)
@@ -61,7 +62,7 @@ class MusicDupApp(ctk.CTk):
 
         title_label = ctk.CTkLabel(
             header_frame,
-            text="🎵 Music Duplicate Finder v2.0",
+            text=f"🎵 Music Duplicate Finder v{__version__}",
             font=ctk.CTkFont(size=20, weight="bold")
         )
         title_label.pack(side="left", padx=20, pady=10)
@@ -284,12 +285,23 @@ class MusicDupApp(ctk.CTk):
                 status_str = "(Cached)" if is_cached else "(Fingerprinting)"
                 self.after(0, lambda: self._update_scan_progress(pct, f"[{current}/{total}] {status_str} {filename[:40]}"))
 
-            scan_stats = scan_directory(directory, self.db, progress_callback=progress_cb)
-            dup_groups = find_and_rank_duplicates(self.db, similarity_threshold=similarity, duration_tolerance=tolerance)
+            try:
+                scan_stats = scan_directory(directory, self.db, progress_callback=progress_cb)
+                dup_groups = find_and_rank_duplicates(self.db, similarity_threshold=similarity, duration_tolerance=tolerance)
+            except Exception as e:
+                err = str(e)
+                self.after(0, lambda: self._on_scan_failed(err))
+                return
 
             self.after(0, lambda: self._on_scan_completed(scan_stats, dup_groups))
 
         threading.Thread(target=run_scan, daemon=True).start()
+
+    def _on_scan_failed(self, error: str):
+        self.is_scanning = False
+        self.start_scan_btn.configure(state="normal")
+        self.status_label.configure(text=f"Scan failed: {error}")
+        messagebox.showerror("Scan Failed", f"The scan stopped because of an error:\n\n{error}")
 
     def _update_scan_progress(self, progress_pct: float, status_text: str):
         self.progress_bar.set(progress_pct)
