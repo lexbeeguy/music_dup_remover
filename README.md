@@ -16,7 +16,7 @@ The download is the desktop app. For the command-line tool, or to run on macOS o
 
 ## How it works
 
-1. **Scan.** Walks your music folder, reads tags and audio properties with [mutagen](https://mutagen.readthedocs.io/), and computes a [Chromaprint](https://acoustid.org/chromaprint) acoustic fingerprint for each file with `fpcalc`. Results are cached in a SQLite database, so rescans only process new or changed files. Files that have been deleted since the last scan are dropped from the cache.
+1. **Scan.** Walks your music folder in parallel, reads tags and audio properties with [mutagen](https://mutagen.readthedocs.io/), and computes a [Chromaprint](https://acoustid.org/chromaprint) acoustic fingerprint for each file with `fpcalc`. Results are cached in a SQLite database, so rescans only process new or changed files. Files that have been deleted since the last scan are dropped from the cache.
 2. **Match.** Two tracks are duplicates when their fingerprints line up (default similarity ≥ 0.85), or when their normalized title and artist match and their durations agree within a tolerance (default 3.5 s). Matches are chained into groups.
 3. **Rank.** Within each group, files are ranked by a quality score: lossless beats lossy, then higher bitrate, sample rate and bit depth, then more complete tags. Rank 1 is kept.
 4. **Quarantine.** Lower-ranked copies are *moved* (never deleted) to a quarantine folder that mirrors your folder structure. Every move is logged, so `restore` puts files back exactly where they were.
@@ -122,7 +122,8 @@ Tests generate their own synthetic audio, so no music files are needed. Tests th
 ```
 music_dup/
   cli.py               Click commands
-  scanner.py           Folder walking, caching, stale-entry pruning
+  scanner.py           Folder walking, parallel fingerprinting, caching, stale-entry pruning
+  paths.py             Windows long-path handling
   metadata.py          Tag/audio-property extraction and quality scoring
   fingerprint.py       fpcalc discovery, fingerprinting, similarity matching
   duplicate_finder.py  Grouping and ranking

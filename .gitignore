@@ -67,3 +67,6 @@ test_music/
 quarantine/
 music_dup_finder/
 
+
+# Local experiments
+scratch/

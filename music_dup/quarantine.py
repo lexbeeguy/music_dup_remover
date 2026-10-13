@@ -3,6 +3,7 @@ import shutil
 import logging
 from typing import List, Dict, Any, Optional, Set
 from music_dup.db import Database
+from music_dup.paths import normalize_long_path as _lp
 
 logger = logging.getLogger(__name__)
 
@@ -31,13 +32,13 @@ def get_quarantine_target_path(
         if rel_path.startswith(".."):
             # Outside base scan dir: use basename
             rel_path = os.path.basename(original_path)
-    except ValueError:
+    except Exception:
         rel_path = os.path.basename(original_path)
 
     dest_path = os.path.join(quarantine_dir, rel_path)
     
     def taken(p: str) -> bool:
-        return os.path.exists(p) or os.path.normcase(p) in reserved
+        return os.path.exists(_lp(p)) or os.path.normcase(p) in reserved
 
     # Handle collisions with files already in quarantine or claimed earlier in this batch
     if taken(dest_path):
@@ -73,7 +74,7 @@ def quarantine_duplicates(
         duplicates = group["all_files"][1:]  # Rank 2 and below
 
         # Safety: never quarantine the remaining copies if the file we'd keep is gone
-        if not os.path.exists(master["filepath"]):
+        if not os.path.exists(_lp(master["filepath"])):
             logger.warning(f"Skipping group {gid}: master file missing ({master['filepath']})")
             continue
 
@@ -85,7 +86,7 @@ def quarantine_duplicates(
                 continue  # Skip files not selected by user
 
             orig_path = dup["filepath"]
-            if not os.path.exists(orig_path):
+            if not os.path.exists(_lp(orig_path)):
                 continue
 
             target_path = get_quarantine_target_path(orig_path, base_scan_dir, quarantine_dir, reserved_targets)
@@ -113,15 +114,15 @@ def quarantine_duplicates(
             target = item["quarantine_path"]
             
             try:
-                os.makedirs(os.path.dirname(target), exist_ok=True)
-                if os.path.exists(target):
+                os.makedirs(_lp(os.path.dirname(target)), exist_ok=True)
+                if os.path.exists(_lp(target)):
                     raise FileExistsError(f"destination already exists: {target}")
-                shutil.move(orig, target)
+                shutil.move(_lp(orig), _lp(target))
                 try:
                     db.record_quarantine(item["file_id"], orig, target, item["group_id"])
                 except Exception:
                     # Don't leave an untracked file in quarantine: put it back.
-                    shutil.move(target, orig)
+                    shutil.move(_lp(target), _lp(orig))
                     raise
                 moved_count += 1
                 moved_size += item["filesize"]
@@ -177,20 +178,20 @@ def restore_quarantined_files(
             orig_path = item["original_path"]
 
             name = os.path.basename(q_path)
-            if not os.path.exists(q_path):
+            if not os.path.exists(_lp(q_path)):
                 errors.append(f"Failed restoring {name}: quarantined file is missing ({q_path})")
                 continue
-            if os.path.exists(orig_path):
+            if os.path.exists(_lp(orig_path)):
                 # Never overwrite: on macOS/Linux shutil.move would silently replace it.
                 errors.append(f"Failed restoring {name}: a file already exists at {orig_path}")
                 continue
             try:
-                os.makedirs(os.path.dirname(orig_path), exist_ok=True)
-                shutil.move(q_path, orig_path)
+                os.makedirs(_lp(os.path.dirname(orig_path)), exist_ok=True)
+                shutil.move(_lp(q_path), _lp(orig_path))
                 try:
                     db.record_restore(file_id, orig_path)
                 except Exception:
-                    shutil.move(orig_path, q_path)  # keep DB and disk consistent
+                    shutil.move(_lp(orig_path), _lp(q_path))  # keep DB and disk consistent
                     raise
                 restored_count += 1
             except Exception as e:

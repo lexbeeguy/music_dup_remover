@@ -26,7 +26,8 @@ pyinstaller music-dup.spec            # Windows only -> dist\music-dup-gui.exe
 | File | Role |
 |---|---|
 | `music_dup/cli.py` | Click commands; thin wrappers over the modules below |
-| `music_dup/scanner.py` | Walks folders, uses the DB cache (path + size + mtime), prunes deleted files |
+| `music_dup/scanner.py` | Walks folders, uses the DB cache (path + size + mtime), fingerprints uncached files in a thread pool, writes to the DB in batches, prunes deleted files |
+| `music_dup/paths.py` | `normalize_long_path()`: adds the `\\?\` prefix for long Windows paths |
 | `music_dup/metadata.py` | mutagen tag/audio-property extraction; `AudioMetadata.calculate_quality_score()` |
 | `music_dup/fingerprint.py` | `fpcalc` discovery/verification, raw fingerprints, `match_fingerprints()` |
 | `music_dup/duplicate_finder.py` | Pairwise matching (fingerprint OR title/artist/duration), union-find grouping, ranking |
@@ -56,6 +57,9 @@ These protect users' music files. Each has a regression test.
 - **fpcalc lookup order:** `FPCALC` env var, PyInstaller bundle, `bin/`, `acoustid.FPCALC_COMMAND`, PATH, venv. `.exe` builds are ignored off Windows. The result is cached in module globals, which tests reset via an autouse fixture.
 - **Thresholds:** defaults live in `duplicate_finder.DEFAULT_SIMILARITY_THRESHOLD` (0.85) and `DEFAULT_DURATION_TOLERANCE` (3.5 s); the CLI and GUI use these.
 - **Windows file locks:** stop the preview player (it unloads the file) before moving files; the GUI already does this.
+- **Long paths:** wrap paths in `normalize_long_path()` for every filesystem call (`exists`, `getmtime`, `makedirs`, `shutil.move`, opening files) but store and display the plain path. Missing a call makes long-path files look deleted.
+- **Matching** sorts files by duration and breaks out of the inner loop once lengths differ by more than the tolerance; keep that loop's `break` logic in sync with `is_metadata_duplicate`'s duration check.
+- **Scanning concurrency:** workers (`_process_file_worker`) must not touch the DB; only the main thread writes, in batches.
 - **Version** is in two places: `pyproject.toml` and `music_dup/__init__.py`. The GUI and `--version` read `__version__`.
 
 ## Tests

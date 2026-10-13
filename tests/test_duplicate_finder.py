@@ -93,3 +93,39 @@ class TestRanking:
         scan_directory(library.music, db)
         (group,) = find_and_rank_duplicates(db)
         assert group["wasted_size"] == group["duplicates"][0]["filesize"]
+
+
+class TestDurationWindow:
+    """The matcher sorts by duration and stops early; make sure it still finds everything."""
+
+    def _db_with(self, library, durations_and_names):
+        from helpers import create_sine_wave_wav
+        import os
+        for i, (dur, name) in enumerate(durations_and_names):
+            create_sine_wave_wav(os.path.join(library.music, f"d{i}", name), duration=dur, sample_rate=8000, num_channels=1)
+        db = Database(library.db_path)
+        scan_directory(library.music, db)
+        return db
+
+    def test_zero_tolerance_requires_equal_length(self, library, no_fpcalc):
+        # Regression (merge): tolerance 0 used to disable the length check entirely
+        db = self._db_with(library, [(2.0, "Song.wav"), (3.0, "Song.wav")])
+        assert find_and_rank_duplicates(db, duration_tolerance=0.0) == []
+        assert len(find_and_rank_duplicates(db, duration_tolerance=1.5)) == 1
+
+    def test_matches_beyond_the_first_neighbour(self, library, no_fpcalc):
+        # A, B, C sorted by length; A and C are within tolerance, B is unrelated
+        db = self._db_with(library, [(2.0, "Alpha.wav"), (2.5, "Zulu.wav"), (3.0, "Alpha.wav")])
+        groups = find_and_rank_duplicates(db, duration_tolerance=1.5)
+        assert len(groups) == 1
+        assert {f["filepath"].split("/")[-1] for f in groups[0]["all_files"]} == {"Alpha.wav"}
+
+    def test_ranking_ties_are_deterministic(self, library, no_fpcalc):
+        library.song("a/song.wav")
+        library.song("b/song.wav")
+        db = Database(library.db_path)
+        scan_directory(library.music, db)
+        first = find_and_rank_duplicates(db)[0]["master_file"]["id"]
+        for _ in range(3):
+            assert find_and_rank_duplicates(db)[0]["master_file"]["id"] == first
+        assert first == min(f["id"] for f in find_and_rank_duplicates(db)[0]["all_files"])

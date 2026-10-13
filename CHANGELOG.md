@@ -1,5 +1,26 @@
 # Changelog
 
+## 2.2.0
+
+Merges the performance work from the unreleased local "Version 2.1" commit (`49cf438`) with the 2.1.0 release.
+
+### Added
+- **Parallel scanning:** new and changed files are fingerprinted concurrently (up to 32 workers by default; `scan_directory(..., max_workers=N)` to override). Results are written to the database in batches of 200.
+- **Faster matching:** files are sorted by length and each is compared only with others of similar length, instead of with every file in the library.
+- **Long Windows paths:** files in folders deeper than the classic 260-character limit can be scanned, quarantined and restored.
+- **Desktop app paging:** duplicate groups are shown 50 per page with Previous/Next buttons, so large libraries stay responsive.
+- A database index on track duration.
+- Ties in quality ranking are broken by file ID, so the same copy is always kept.
+
+### Fixed (in the merged code)
+- With a length tolerance of 0, the faster matcher skipped the length check entirely instead of requiring equal lengths.
+- On Windows, files with very long paths were treated as deleted by stale-entry cleanup and re-fingerprinted on every scan, because the cache check and cleanup didn't use the long-path form.
+- Scan progress didn't reach 100% when some files failed the cache check.
+- A new scan in the desktop app now starts on page 1.
+
+### Changed
+- Scanning uses a thread pool everywhere, rather than separate processes outside the `.exe`. The heavy work already runs in separate `fpcalc` processes, so threads keep all cores busy. This also avoids slow process start-up on Windows and behaves the same as the packaged app.
+
 ## 2.1.0
 
 A reliability release on top of 2.0: bug fixes, a much larger test suite, CI and documentation. Developed with Claude (earlier versions were built with Antigravity).
@@ -44,13 +65,13 @@ A reliability release on top of 2.0: bug fixes, a much larger test suite, CI and
 - A `dev` extra: `pip install -e ".[dev]"`.
 - A release workflow that builds `music-dup-gui.exe` on GitHub and attaches it to a GitHub Release when a version tag is pushed.
 
-## 2.0
+## 2.0.0
 
 - CustomTkinter desktop app with audio preview, per-file quarantine and restore selection, and a standalone Windows executable.
 - Windows Media Player playback for M4A/AAC previews.
 - No console window flashing during fingerprinting on Windows.
 - Audio preview stops before quarantine/restore so files aren't locked; move errors are reported.
 
-## Initial release
+## 1.0.0
 
 - Initial command-line tool: acoustic fingerprint scanning, quality ranking, and quarantine/restore.

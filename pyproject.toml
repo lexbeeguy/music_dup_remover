@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "music-dup"
-version = "2.1.0"
+version = "2.2.0"
 description = "Find duplicate songs by how they sound, keep the best-quality copy, and move the rest to a reversible quarantine."
 readme = "README.md"
 license = {file = "LICENSE"}
