@@ -1,0 +1,63 @@
+name: release
+
+# Builds the standalone Windows app (music-dup-gui.exe).
+# - Pushing a version tag (e.g. v2.1.0) builds it and publishes a GitHub Release with the .exe attached.
+# - Running it manually from the Actions tab builds it and keeps the .exe as a downloadable workflow artifact.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install . pyinstaller
+
+      - name: Check bundled fpcalc runs
+        run: python -c "from music_dup.fingerprint import verify_fpcalc; s = verify_fpcalc(); print(s); assert s['available']"
+
+      - name: Build executable
+        run: pyinstaller --noconfirm music-dup.spec
+
+      - name: Check the executable was produced
+        shell: pwsh
+        run: |
+          $exe = Get-Item dist\music-dup-gui.exe
+          "{0} ({1:N1} MB)" -f $exe.Name, ($exe.Length / 1MB)
+
+      - name: Keep the build as a workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: music-dup-gui-windows
+          path: dist/music-dup-gui.exe
+          if-no-files-found: error
+
+      - name: Publish GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/music-dup-gui.exe
+          generate_release_notes: true
+          body: |
+            ## Download
+
+            **[music-dup-gui.exe](https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/music-dup-gui.exe)**: the desktop app for Windows 10/11. No installation needed; download it and double-click.
+
+            Windows SmartScreen may warn that the app is unrecognized because it isn't code-signed. Click **More info → Run anyway**.
+
+            See [CHANGELOG.md](https://github.com/${{ github.repository }}/blob/${{ github.ref_name }}/CHANGELOG.md) for what's new.

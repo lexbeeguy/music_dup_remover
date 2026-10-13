@@ -6,6 +6,14 @@ It catches duplicates that file-hash tools miss: the same track as FLAC and MP3,
 
 See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
+## Download (Windows)
+
+Get **`music-dup-gui.exe`** from the [latest release](https://github.com/lexbeeguy/music_dup_remover/releases/latest). It's a single file with everything included, Chromaprint too, so there's nothing to install: download it and double-click.
+
+Windows SmartScreen may say the app is unrecognized, because it isn't code-signed. Click **More info → Run anyway**.
+
+The download is the desktop app. For the command-line tool, or to run on macOS or Linux, install from source as described below.
+
 ## How it works
 
 1. **Scan.** Walks your music folder, reads tags and audio properties with [mutagen](https://mutagen.readthedocs.io/), and computes a [Chromaprint](https://acoustid.org/chromaprint) acoustic fingerprint for each file with `fpcalc`. Results are cached in a SQLite database, so rescans only process new or changed files. Files that have been deleted since the last scan are dropped from the cache.
@@ -17,7 +25,7 @@ See [CHANGELOG.md](CHANGELOG.md) for what changed in each version.
 
 MP3, M4A/AAC/ALAC, FLAC, WAV, OGG, Opus, AIFF and WMA.
 
-## Install
+## Install from source
 
 Requires Python 3.9 or newer.
 
@@ -126,14 +134,29 @@ tests/
 bin/                   Bundled fpcalc for Windows
 ```
 
-### Building a Windows executable
+### Building the Windows executable
+
+Locally, on Windows:
 
 ```bash
-python -m pip install pyinstaller
+python -m pip install . pyinstaller
 pyinstaller music-dup.spec
 ```
 
-The standalone GUI is written to `dist/music-dup-gui.exe` with `fpcalc.exe` bundled.
+The standalone app is written to `dist\music-dup-gui.exe` with `fpcalc.exe` bundled.
+
+### Publishing a release
+
+Pushing a version tag builds the executable on GitHub and publishes it as a release:
+
+```bash
+git tag v2.1.0
+git push origin v2.1.0
+```
+
+The [release workflow](.github/workflows/release.yml) builds `music-dup-gui.exe` on Windows and attaches it to a new GitHub Release for that tag. To build without publishing, run the **release** workflow manually from the Actions tab; the `.exe` is then available under that run's artifacts.
+
+Bump the version in `pyproject.toml` and `music_dup/__init__.py`, and add a `CHANGELOG.md` entry, before tagging a new version.
 
 ## License
 

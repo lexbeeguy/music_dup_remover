@@ -42,6 +42,7 @@ A reliability release on top of 2.0: bug fixes, a much larger test suite, CI and
 - A test suite of 65 tests, up from 6. It covers title normalization, fingerprint matching, fpcalc discovery, cache pruning, the quarantine/restore lifecycle and the CLI, with a regression test for each fix above.
 - GitHub Actions CI running on Linux (Python 3.9–3.13) and Windows, with real Chromaprint fingerprinting.
 - A `dev` extra: `pip install -e ".[dev]"`.
+- A release workflow that builds `music-dup-gui.exe` on GitHub and attaches it to a GitHub Release when a version tag is pushed.
 
 ## 2.0
 

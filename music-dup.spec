@@ -6,7 +6,7 @@ ctk_path = os.path.dirname(customtkinter.__file__)
 
 a = Analysis(
     ['music_dup/gui/app.py'],
-    pathex=[],
+    pathex=[SPECPATH],  # project root, so the music_dup package is found
     binaries=[('bin/chromaprint-fpcalc-1.5.1-windows-x86_64/fpcalc.exe', '.')],
     datas=[(ctk_path, 'customtkinter')],
     hiddenimports=['customtkinter', 'pygame', 'PIL', 'win32com', 'pythoncom'],
